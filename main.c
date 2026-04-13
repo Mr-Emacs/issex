@@ -12,6 +12,7 @@
 
 typedef struct header_t header_t;
 typedef struct task_t task_t;
+typedef struct String_Views String_Views;
 
 struct header_t {
     const char *title;
@@ -21,11 +22,11 @@ struct header_t {
     char *huid;
 };
 
-typedef struct {
+struct String_Views {
     String_View *items;
     size_t count;
     size_t capacity;
-} String_Views;
+};
 
 struct task_t {
     char *path;
@@ -244,7 +245,7 @@ static int cmd_ls(int argc, char **argv, task_t *task)
 static int cmd_close(int argc, char **argv, task_t *task)
 {
     // FIXME: This is an error dunno why the first arg is close
-    int skip = create_flag(argc, argv, int, "id", "HUID of the task Issue");
+    int skip = create_flag(argc, argv, int, NULL, NULL);
     UNUSED(skip);
     char *huid = create_flag(argc, argv, char*, "id", "HUID of the task Issue");
     return close_task(task, huid);

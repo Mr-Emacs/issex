@@ -185,6 +185,12 @@ void help_flag() {
     }
 }
 
+static void flag_consume(int argc, int index)
+{
+    _track_args(argc);
+    if (index > 0 && index < argc) _arg_used[index] = true;
+}
+
 #define create_flag(argc, argv, type, name, description) \
     _Generic((type){0}, \
         int: ({ \
