@@ -1,7 +1,10 @@
+#define NOB_NO_ECHO
 #define NOB_IMPLEMENTATION
 #include "nob.h"
+#include "flag.h"
 
 #include <time.h>
+#include <libgen.h>
 #include <limits.h>
 #include <sys/types.h>
 
@@ -99,6 +102,7 @@ static int create_task_dir(task_t *task)
 
 static int create_task_md(task_t *task)
 {
+    if (create_task_dir(task) < 0) return -1;
     String_Builder sb = {0};
     task->header.title = task->task_name;
     sb_appendf(&sb, "# %s\n\n", task->task_name);
@@ -115,6 +119,7 @@ static int create_task_md(task_t *task)
     if (stat(task->current_path, &st) == 0) {
         if (chdir(task->current_path) == 0) {
             if (!nob_write_entire_file("NOTES.md", sb.items, sb.count)) return -1;
+            nob_log(INFO, "Created issue with ID %s", task->header.huid);
         }
     }
     return 0;
@@ -167,10 +172,12 @@ static int close_task(task_t *task, const char *huid)
     String_Builder sb = {0};
     list_tasks(task);
     const char *full_huid = temp_sprintf("%s/%s", task->root_path, huid);
+    if (list_tasks(task) < 0) return -1;
     for (size_t i = 0; i < task->list.count; i++) {
         if (sv_eq(task->list.items[i], sv_from_cstr(full_huid))) {
             const char *notes_path = temp_sprintf("%s/NOTES.md",
                                      temp_sv_to_cstr(task->list.items[i]));
+            printf("%s\n", notes_path);
 
             if (!nob_read_entire_file(notes_path, &sb)) return -1;
 
@@ -194,21 +201,66 @@ static int close_task(task_t *task, const char *huid)
     return -1;
 }
 
+void usage(const char *program)
+{
+    printf("Usage: %s <command> [flags]\n\n", program);
+    printf("Commands:\n");
+    printf("  add    -name <name> -priority <level> -notes <notes>\n");
+    printf("  list   -<query>\n");
+    printf("  close  -id <huid>\n");
+}
+
+static int cmd_add(int argc, char **argv, task_t *task)
+{
+    char *name   = create_flag(argc, argv, char*, "name", "Name of the issue");
+    int priority = create_flag(argc, argv, int, "priority", "Priority of the issue");
+    char *notes  = create_flag(argc, argv, char*, "notes", "Notes for the current issue");
+    if (!name) { 
+        nob_log(ERROR, "add: missing name\n");
+        return -1;
+    }
+
+    task->task_name = name;
+    task->header.notes = notes;
+    task->header.priority = (size_t)priority;
+
+    return create_task_md(task);
+}
+
+static int cmd_ls(int argc, char **argv, task_t *task)
+{
+    // TODO: Add the query language
+    UNUSED(argc);
+    UNUSED(argv);
+    if (list_tasks(task) < 0) return -1;
+    for (size_t i = 0; i < task->list.count; ++i) {
+        char *base = strdup(temp_sv_to_cstr(task->list.items[i]));
+        char *name = basename(base);
+        printf("%s\n", name);
+    }
+    return 0;
+}
+
+static int cmd_close(int argc, char **argv, task_t *task)
+{
+    // FIXME: This is an error dunno why the first arg is close
+    int skip = create_flag(argc, argv, int, "id", "HUID of the task Issue");
+    UNUSED(skip);
+    char *huid = create_flag(argc, argv, char*, "id", "HUID of the task Issue");
+    return close_task(task, huid);
+}
+
 int main(int argc, char **argv)
 {
-    UNUSED(argv);
-    UNUSED(argc);
+    if (argc < 2) { usage(argv[0]); return 1; }
 
+    const char *cmd = argv[1];
+    static task_t t = {0};
 
-    // TODO: Customize this with command line argument
-    task_t t = {0};
-    t.task_name = "task";
-    t.header.notes = "Hallo";
-
-    if (create_task_dir(&t) < 0) return 1;
-    if (create_task_md(&t) < 0)  return 1;
-    if (list_tasks(&t) < 0)      return 1;
-    if (close_task(&t, t.current_path) < 0) return 1;
+    if (strcmp(cmd, "add")   == 0)  { if (cmd_add(argc, argv, &t) < 0) return -1; }
+    else if (strcmp(cmd, "list")  == 0)  { if (cmd_ls(argc, argv, &t) < 0) return -1; }
+    else if (strcmp(cmd, "close") == 0) { if (cmd_close(argc, argv, &t) < 0) return -1; }
+    else { usage(argv[0]); return -1; }
 
     return 0;
 }
