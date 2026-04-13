@@ -4,11 +4,21 @@
 #include "flag.h"
 
 #include <time.h>
+#ifdef _WIN32
+#include <windows.h>
+#include <tchar.h>
+#include <direct.h>
+#else
 #include <libgen.h>
 #include <limits.h>
 #include <sys/types.h>
+#endif
 
 #define NOTES "notes"
+
+#ifndef PATH_MAX
+#define PATH_MAX 4096
+#endif
 
 typedef struct header_t header_t;
 typedef struct task_t task_t;
@@ -43,6 +53,7 @@ static int create_task_dir(task_t *task);
 static int create_task_md(task_t *task);
 static int is_directory(const char *path);
 
+#ifndef _WIN32
 static int is_directory(const char *path)
 {
     struct stat st = {0};
@@ -54,10 +65,18 @@ static int is_directory(const char *path)
 fail:
     return -1;
 }
+#else
+static int is_directory(const char *path)
+{
+    DWORD attr = GetFileAttributesA(path);
+    if (attr == INVALID_FILE_ATTRIBUTES) return -1;
+    if (!(attr & FILE_ATTRIBUTE_DIRECTORY)) return -1;
+    return 0;
+}
+#endif
 
 static int create_task_dir(task_t *task)
 {
-
     if (find_root(task) < 0) {
         char cwd[PATH_MAX];
         if (getcwd(cwd, sizeof(cwd)) == NULL) return -1;
@@ -70,33 +89,21 @@ static int create_task_dir(task_t *task)
 
     char buffer[20];
     strftime(buffer, sizeof(buffer), "%Y%m%d", now);
-    char *buf = temp_sprintf("%s_%s_%02d%02d%02d", task->task_name, buffer, 
-                              now->tm_hour, now->tm_min, now->tm_sec);
+    char *buf = temp_sprintf("%s_%s_%02d%02d%02d", task->task_name, buffer,
+                             now->tm_hour, now->tm_min, now->tm_sec);
 
-    struct stat st = {0};
+    char full_path[PATH_MAX];
+    snprintf(full_path, sizeof(full_path), "%s/%s", task->root_path, buf);
 
-    if (chdir(task->root_path) == 0) {
-        if (stat(buf, &st) == 0 && S_ISDIR(st.st_mode)) {
-            size_t size = strlen(buf) + 1;
-            task->current_path = malloc(size);
-            memcpy(task->current_path, buf, size);
-            task->header.huid = malloc(size);
-            memcpy(task->header.huid, buf, size);
-            return 0;
-        } else {
-            if (!nob_mkdir_if_not_exists(buf)) return -1;
-        }
-    }
+    if (!nob_mkdir_if_not_exists(full_path)) return -1;
 
-    // TODO: Use arena allocator
-    size_t size = strlen(buf) + 1;
+    size_t size = strlen(full_path) + 1;
     task->current_path = malloc(size);
-    memcpy(task->current_path, buf, size);
-    task->current_path[size-1] = '\0';
+    memcpy(task->current_path, full_path, size);
 
-    task->header.huid = malloc(size);
-    memcpy(task->header.huid, buf, size);
-    task->header.huid[size-1] = '\0';
+    size_t huid_size = strlen(buf) + 1;
+    task->header.huid = malloc(huid_size);
+    memcpy(task->header.huid, buf, huid_size);
 
     return 0;
 }
@@ -108,21 +115,16 @@ static int create_task_md(task_t *task)
     task->header.title = task->task_name;
     sb_appendf(&sb, "# %s\n\n", task->task_name);
     sb_appendf(&sb, "- ID: %s\n\n", task->header.huid);
-    sb_appendf(&sb,  "## PRIORITY: %ld\n\n", task->header.priority);
-
-    sb_append_cstr(&sb,  "## STATUS: OPEN\n\n");
+    sb_appendf(&sb, "## PRIORITY: %zu\n\n", task->header.priority);
+    sb_append_cstr(&sb, "## STATUS: OPEN\n\n");
     task->header.status = true;
-
     sb_appendf(&sb, "## NOTES: \n\n%s\n", task->header.notes);
 
-    struct stat st = {0};
+    char notes_path[PATH_MAX];
+    snprintf(notes_path, sizeof(notes_path), "%s/NOTES.md", task->current_path);
 
-    if (stat(task->current_path, &st) == 0) {
-        if (chdir(task->current_path) == 0) {
-            if (!nob_write_entire_file("NOTES.md", sb.items, sb.count)) return -1;
-            nob_log(INFO, "Created issue with ID %s", task->header.huid);
-        }
-    }
+    if (!nob_write_entire_file(notes_path, sb.items, sb.count)) return -1;
+    nob_log(INFO, "Created issue with ID %s", task->header.huid);
     return 0;
 }
 
@@ -134,6 +136,7 @@ static int find_root(task_t *task)
     if (getcwd(old_dir, sizeof(old_dir)) == NULL) return -1;
     while(1) {
         if (getcwd(path, sizeof(path)) == NULL) goto fail;
+        #ifndef _WIN32
         struct stat st = {0};
 
         if (stat(NOTES, &st) == 0 && S_ISDIR(st.st_mode)) {
@@ -144,10 +147,26 @@ static int find_root(task_t *task)
 
         if (strcmp(path, "/") == 0) goto fail;
         if (chdir("..") != 0) goto fail;
+        #else
+        DWORD dir = GetFileAttributesA(NOTES);
+        if (dir != INVALID_FILE_ATTRIBUTES && (dir & FILE_ATTRIBUTE_DIRECTORY)) {
+            snprintf(task->root_path, sizeof(task->root_path), "%s/"NOTES, path);
+            _chdir(old_dir);
+            return 0;
+        }
+
+        // Check if we've reached the drive root (e.g. "C:\")
+        if (strlen(path) <= 3 && path[1] == ':') goto fail;
+        if (_chdir("..") != 0) goto fail;
+        #endif
     }
 
 fail:
+    #ifdef _WIN32
+    _chdir(old_dir);
+    #else
     chdir(old_dir);
+    #endif
     return -1;
 }
 
@@ -216,7 +235,7 @@ static int cmd_add(int argc, char **argv, task_t *task)
     char *name   = create_flag(argc, argv, char*, "name", "Name of the issue");
     int priority = create_flag(argc, argv, int, "priority", "Priority of the issue");
     char *notes  = create_flag(argc, argv, char*, "notes", "Notes for the current issue");
-    if (!name) { 
+    if (!name) {
         nob_log(ERROR, "add: missing name\n");
         return -1;
     }
@@ -235,9 +254,23 @@ static int cmd_ls(int argc, char **argv, task_t *task)
     UNUSED(argv);
     if (list_tasks(task) < 0) return -1;
     for (size_t i = 0; i < task->list.count; ++i) {
-        char *base = strdup(temp_sv_to_cstr(task->list.items[i]));
+        const char *full = temp_sv_to_cstr(task->list.items[i]);
+#ifndef _WIN32
+        char *base = strdup(full);
         char *name = basename(base);
         printf("%s\n", name);
+        free(base);
+#else
+        char win_path[PATH_MAX];
+        strncpy(win_path, full, PATH_MAX - 1);
+        win_path[PATH_MAX - 1] = '\0';
+        for (char *p = win_path; *p; p++) if (*p == '/') *p = '\\';
+
+        char fname[_MAX_FNAME];
+        char ext[_MAX_EXT];
+        _splitpath_s(win_path, NULL, 0, NULL, 0, fname, _MAX_FNAME, ext, _MAX_EXT);
+        printf("%s%s\n", fname, ext);
+#endif
     }
     return 0;
 }
