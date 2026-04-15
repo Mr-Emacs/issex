@@ -1,8 +1,11 @@
 #define NOB_NO_ECHO
 #define NOB_IMPLEMENTATION
 #include "nob.h"
-#include "flag.h"
 
+#define QUERY_IMPLEMENTATION
+#include "query.h"
+
+#include "flag.h"
 #include <time.h>
 #ifdef _WIN32
 #include <windows.h>
@@ -14,7 +17,10 @@
 #include <sys/types.h>
 #endif
 
-#define NOTES "notes"
+#define HT_IMPLEMENTATION
+#include "ht.h"
+
+#define notes_dir "notes"
 
 #ifndef PATH_MAX
 #define PATH_MAX 4096
@@ -22,7 +28,23 @@
 
 typedef struct header_t header_t;
 typedef struct task_t task_t;
+typedef struct task_meta_t task_meta_t;
 typedef struct String_Views String_Views;
+
+#if defined(_WIN32)
+static char *strndup_win(const char *s, size_t n)
+{
+    char *data = malloc(n + 1);
+    if (data) {
+        memcpy(data, s, n);
+        data[n] = '\0';
+    }
+    return data;
+}
+#define strndup strndup_win
+#else
+#define strndup strndup
+#endif
 
 struct header_t {
     const char *title;
@@ -40,7 +62,7 @@ struct String_Views {
 
 struct task_t {
     char *path;
-    char root_path[PATH_MAX + sizeof("/" NOTES)];
+    char root_path[PATH_MAX + sizeof("/" notes_dir)];
     time_t time;
     const char *task_name;
     char *current_path;
@@ -48,10 +70,138 @@ struct task_t {
     String_Views list;
 };
 
+struct task_meta_t {
+    char *huid;
+    char *notes;
+    char *path;
+    char *title;
+    bool status;
+    size_t priority;
+    time_t time;
+};
+
 static int find_root(task_t *task);
 static int create_task_dir(task_t *task);
 static int create_task_md(task_t *task);
 static int is_directory(const char *path);
+static task_meta_t *task_parse(const char *path);
+static bool evaluate_query(node_t *node, task_meta_t *task);
+static void free_task_metadata(task_meta_t *task);
+
+static int find_note_line_num(const char *file_path)
+{
+    String_Builder sb = {0};
+
+    int line_num = 1;
+    if (!read_entire_file(file_path, &sb)) return -1;
+
+    String_View content = sb_to_sv(sb);
+    while(content.count > 0) {
+        String_View line = sv_chop_by_delim(&content, '\n');
+        line = sv_trim(line);
+        if (sv_starts_with(line, sv_from_cstr("## NOTES:"))) {
+            nob_sb_free(sb);
+            return line_num+1;
+        }
+        line_num++;
+    }
+    nob_sb_free(sb);
+    return 1;
+}
+
+static task_meta_t *task_parse(const char *path)
+{
+    char *notes = nob_temp_sprintf("%s/notes.md", path);
+    String_Builder sb = {0};
+
+    if (!read_entire_file(notes, &sb)) return NULL;
+
+    task_meta_t *meta = calloc(1, sizeof(*meta));
+    if (!meta) return NULL;
+
+    meta->path = strdup(path);
+    meta->huid = strdup(nob_path_name(meta->path));
+    meta->priority = 0;
+    meta->status = false;
+    meta->title = NULL;
+
+    String_View content = sb_to_sv(sb);
+
+    while(content.count > 0) {
+        String_View line = sv_chop_by_delim(&content, '\n');
+        line = sv_trim(line);
+
+        if (sv_starts_with(line, sv_from_cstr("# "))) {
+            sv_chop_left(&line, 2);
+            line = sv_trim(line);
+            meta->title = strndup(line.data, line.count);
+        }
+        else if (sv_starts_with(line, sv_from_cstr("## PRIORITY"))) {
+            String_View temp = line;
+            String_View prefix = sv_chop_by_delim(&temp, ':');
+            if (sv_starts_with(prefix, sv_from_cstr("## PRIORITY"))) {
+                String_View priority = sv_trim(temp);
+                if (priority.count > 0) {
+                    char *priority_str = strndup(priority.data, priority.count);
+                    meta->priority = atoi(priority_str);
+                }
+            }
+        }
+        else if (sv_starts_with(line, sv_from_cstr("## STATUS: "))) {
+            sv_chop_left(&line, 11);
+            line = sv_trim(line);
+            meta->status = sv_eq(line, sv_from_cstr("OPEN"));
+        }
+    }
+
+    nob_sb_free(sb);
+    return meta;
+}
+
+static bool evaluate_query(node_t *query, task_meta_t *task)
+{
+    if (!query) return false;
+    switch(query->as) {
+        case NODE_TAG: {
+            return sv_eq(query->tag, sv_from_cstr(task->huid)) ||
+                   (task->title && sv_eq(query->tag, sv_from_cstr(task->title)));
+        }
+        case NODE_PRIORITY: {
+            return task->priority == query->prio.value;
+        }
+        case NODE_STATUS: {
+            return  task->status == query->stat.status;
+        }
+        case NODE_GREATER: {
+            return task->priority > query->prio.value;
+        }
+        case NODE_LESSER: {
+            return task->priority < query->prio.value;
+        }
+        case NODE_NOT: {
+            return !evaluate_query(query->unary.child, task);
+        }
+        case NODE_AND: {
+            return evaluate_query(query->binary.lhs, task) &&
+                   evaluate_query(query->binary.rhs, task);
+        }
+        case NODE_OR: {
+            return evaluate_query(query->binary.lhs, task) ||
+                   evaluate_query(query->binary.rhs, task);
+        }
+        case NODE_COUNT: default: return true;
+    }
+}
+
+static void free_task_metadata(task_meta_t *task)
+{
+    if (task) {
+        free(task->huid);
+        free(task->path);
+        free(task->title);
+        free(task);
+    }
+}
 
 #ifndef _WIN32
 static int is_directory(const char *path)
@@ -80,7 +230,7 @@ static int create_task_dir(task_t *task)
     if (find_root(task) < 0) {
         char cwd[PATH_MAX];
         if (getcwd(cwd, sizeof(cwd)) == NULL) return -1;
-        snprintf(task->root_path, sizeof(task->root_path), "%s/" NOTES, cwd);
+        snprintf(task->root_path, sizeof(task->root_path), "%s/" notes_dir, cwd);
         if (!nob_mkdir_if_not_exists(task->root_path)) return -1;
     }
 
@@ -121,7 +271,7 @@ static int create_task_md(task_t *task)
     sb_appendf(&sb, "## NOTES: \n\n%s\n", task->header.notes);
 
     char notes_path[PATH_MAX];
-    snprintf(notes_path, sizeof(notes_path), "%s/NOTES.md", task->current_path);
+    snprintf(notes_path, sizeof(notes_path), "%s/notes.md", task->current_path);
 
     if (!nob_write_entire_file(notes_path, sb.items, sb.count)) return -1;
     nob_log(INFO, "Created issue with ID %s", task->header.huid);
@@ -139,8 +289,8 @@ static int find_root(task_t *task)
         #ifndef _WIN32
         struct stat st = {0};
 
-        if (stat(NOTES, &st) == 0 && S_ISDIR(st.st_mode)) {
-            snprintf(task->root_path, sizeof(task->root_path), "%s/"NOTES, path);
+        if (stat(notes_dir, &st) == 0 && S_ISDIR(st.st_mode)) {
+            snprintf(task->root_path, sizeof(task->root_path), "%s/"notes_dir, path);
             chdir(old_dir);
             return 0;
         }
@@ -148,9 +298,9 @@ static int find_root(task_t *task)
         if (strcmp(path, "/") == 0) goto fail;
         if (chdir("..") != 0) goto fail;
         #else
-        DWORD dir = GetFileAttributesA(NOTES);
+        DWORD dir = GetFileAttributesA(notes_dir);
         if (dir != INVALID_FILE_ATTRIBUTES && (dir & FILE_ATTRIBUTE_DIRECTORY)) {
-            snprintf(task->root_path, sizeof(task->root_path), "%s/"NOTES, path);
+            snprintf(task->root_path, sizeof(task->root_path), "%s/"notes_dir, path);
             _chdir(old_dir);
             return 0;
         }
@@ -195,17 +345,15 @@ static int close_task(task_t *task, const char *huid)
     if (list_tasks(task) < 0) return -1;
     for (size_t i = 0; i < task->list.count; i++) {
         if (sv_eq(task->list.items[i], sv_from_cstr(full_huid))) {
-            const char *notes_path = temp_sprintf("%s/NOTES.md",
+            const char *notes_path = temp_sprintf("%s/notes.md",
                                      temp_sv_to_cstr(task->list.items[i]));
-            printf("%s\n", notes_path);
-
             if (!nob_read_entire_file(notes_path, &sb)) return -1;
 
             String_View content = nob_sb_to_sv(sb);
             String_Builder out = {0};
             while(content.count > 0) {
                 String_View line = sv_chop_by_delim(&content, '\n');
-                if (sv_starts_with(line, sv_from_cstr("## STATUS: "))) {
+                if (sv_starts_with(line , sv_from_cstr("## STATUS: "))) {
                     sb_append_cstr(&out, "## STATUS: CLOSED\n");
                 } else {
                     sb_appendf(&out, SV_Fmt"\n", SV_Arg(line));
@@ -249,28 +397,74 @@ static int cmd_add(int argc, char **argv, task_t *task)
 
 static int cmd_ls(int argc, char **argv, task_t *task)
 {
-    // TODO: Add the query language
-    UNUSED(argc);
-    UNUSED(argv);
-    if (list_tasks(task) < 0) return -1;
-    for (size_t i = 0; i < task->list.count; ++i) {
-        const char *full = temp_sv_to_cstr(task->list.items[i]);
-#ifndef _WIN32
-        char *base = strdup(full);
-        char *name = basename(base);
-        printf("%s\n", name);
-        free(base);
-#else
-        char win_path[PATH_MAX];
-        strncpy(win_path, full, PATH_MAX - 1);
-        win_path[PATH_MAX - 1] = '\0';
-        for (char *p = win_path; *p; p++) if (*p == '/') *p = '\\';
+    char *src = create_flag(argc, argv, char*, "src", "Source Code for the query System");
+    node_t *query_tree = NULL;
 
-        char fname[_MAX_FNAME];
-        char ext[_MAX_EXT];
-        _splitpath_s(win_path, NULL, 0, NULL, 0, fname, _MAX_FNAME, ext, _MAX_EXT);
-        printf("%s%s\n", fname, ext);
-#endif
+    if (src && src[0] != '\0') {
+        lexer_t lexer = {
+            .source = sv_from_cstr(src),
+            .position = 0,
+        };
+
+        parser_t parser = { .lex = &lexer };
+        parser_advance(&parser);
+        query_tree = parse_expr(&parser);
+        if (!query_tree) {
+            nob_log(NOB_ERROR, "Failed to parse query '%s'\n", src);
+            return -1;
+        }
+        if (parser.cur.as != TEOF) {
+            parse_error_at(&parser, parser.cur, "use '&' for AND or '|' for OR");
+            return -1;
+        }
+    }
+    if (list_tasks(task) < 0) return -1;
+
+    typedef Ht(const char *, task_meta_t *) Task_Ht;
+    Task_Ht task_map = {
+        .hasheq = ht_cstr_hasheq,
+    };
+
+    for (size_t i = 0; i < task->list.count; ++i) {
+        const char *full_path = temp_sv_to_cstr(task->list.items[i]);
+        task_meta_t *meta = task_parse(full_path);
+        if (!meta) {
+            nob_log(NOB_ERROR, "Failed to parse the task '%s'", nob_path_name(full_path));
+            continue;
+        }
+        bool matches = (query_tree == NULL) || evaluate_query(query_tree, meta);
+
+        if (matches) {
+            *ht_put(&task_map, meta->huid) = meta;
+            const char *status = meta->status ? "OPEN" : "CLOSED";
+
+            #ifdef EMACS_PRINT
+            const char *notes_path = temp_sprintf("%s/notes.md", full_path);
+            int notes_line_num = find_note_line_num(notes_path);
+            printf("%s:%d: [%s] P:%zu - %s (HUID: %s)\n",
+                   notes_path, notes_line_num, status, meta->priority,
+                   meta->title ? meta->title : "NoName",
+                   meta->huid
+            );
+            #else
+            printf("(HUID: %s) [Title: %s] |Status:%s| Priority:%zu\n",
+                   meta->huid,
+                   meta->title ? meta->title : "NoName",
+                   status, meta->priority
+            );
+            #endif
+        } else {
+            free_task_metadata(meta);
+        }
+    }
+
+    ht_foreach(value, &task_map) {
+        free_task_metadata(*value);
+    }
+
+    ht_free(&task_map);
+    if (query_tree) {
+        free(query_tree);
     }
     return 0;
 }
@@ -278,8 +472,6 @@ static int cmd_ls(int argc, char **argv, task_t *task)
 static int cmd_close(int argc, char **argv, task_t *task)
 {
     // FIXME: This is an error dunno why the first arg is close
-    int skip = create_flag(argc, argv, int, NULL, NULL);
-    UNUSED(skip);
     char *huid = create_flag(argc, argv, char*, "id", "HUID of the task Issue");
     return close_task(task, huid);
 }
