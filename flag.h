@@ -136,6 +136,7 @@ static bool _parse_bool(int argc, char **argv, const char *name) {
 }
 
 static char* _parse_char_ptr(int argc, char **argv, const char *name) {
+    if (!name) return NULL;
     for (int i = 1; i < argc; i++) {
         if (_arg_used[i]) continue;
 
@@ -145,27 +146,18 @@ static char* _parse_char_ptr(int argc, char **argv, const char *name) {
                 size_t name_len = eq - argv[i] - 1;
                 if (strncmp(argv[i] + 1, name, name_len) == 0 && name[name_len] == '\0') {
                     char *value = eq + 1;
-                    if (!_create_int(value) && !_create_bool(value)) {
-                        _arg_used[i] = true;
-                        return value;
-                    }
+                    _arg_used[i] = true;
+                    return value;
                 }
             } else {
                 if (strcmp(argv[i] + 1, name) == 0 && i + 1 < argc) {
-                    if (!_arg_used[i + 1] && !_create_int(argv[i + 1]) && !_create_bool(argv[i + 1])) {
+                    if (!_arg_used[i + 1]) {
                         _arg_used[i] = true;
                         _arg_used[i + 1] = true;
                         return argv[i + 1];
                     }
                 }
             }
-        }
-    }
-
-    for (int i = 1; i < argc; i++) {
-        if (!_arg_used[i] && !_create_bool(argv[i]) && !_create_int(argv[i])) {
-            _arg_used[i] = true;
-            return argv[i];
         }
     }
     return NULL;

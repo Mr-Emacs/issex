@@ -4,8 +4,8 @@
 [x] Add Unary Not Operation
 [x] Add Binary Operation(And && Or)
 [x] Work on status node.
-[ ] Get Source From CLI
-[ ] Integrated query.c into main.c to do query based search
+[x] Get Source From CLI
+[x] Integrate query.c into main.c to do query based search
 
 # [x] Add NOT Operation
 22:26:12: Starting On Unary Op
@@ -21,4 +21,11 @@
 
 # [x] Add STATUS Node
 00:32:33: Starting on Status Node
-25:56:15 Added a couple more nodes.
+25:56:15: Added a couple more nodes.
+
+# [x] Add SRC CODE Parsing
+16:42:05: Parsable source passing works
+
+# [x] Integrated query based search
+16:45:05: Integrate With My Query
+19:41:00: Finally DONE

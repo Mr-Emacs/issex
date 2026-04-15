@@ -1,6 +1,42 @@
-#define NOB_NO_ECHO
+#ifndef QUERY_H
+#define QUERY_H
+
+/* Query Based Search Documentation
+* This query based search tree is implementing the
+* filtering algorithm that are going to use.
+* Example source: (!p=40) & s=1
+*             p := Priority node, value != 40
+*             s := Status   node, state := 1(OPEN)
+*Output:
+*             AND(
+*                NOT(
+*                    PRIORITY: 40 tag: p
+*                )
+*                STATUS: OPEN tag: s
+*             )
+*/
+
+/* Usage:
+*int main(int argc, char **argv)
+* {
+*    lexer_t lexer = {
+*         .source   = sv_from_cstr("(!p=40) & s=1"),
+*         .position = 0,
+*     };
+**    parser_t parser = { .lex = &lexer };
+*     parser_advance(&parser);
+*     node_t *tree = parse_expr(&parser);
+*    node_print(tree);
+* }
+* return 0;
+*/
+
+#ifndef NOB_IMPLEMENTATION
 #define NOB_IMPLEMENTATION
 #include "nob.h"
+#endif
+
+#define NOB_NO_ECHO
 
 #include <ctype.h>
 
@@ -17,6 +53,7 @@ typedef enum {
     TGREAT,
     TLESS,
     TEOF,
+    TUNKNOWN,
     TCOUNT,
 } token_kind_t;
 
@@ -85,16 +122,16 @@ typedef struct {
     token_t cur;
 } parser_t;
 
-static const char *token_kind_name(token_kind_t as);
-static void print_token(token_t tk);
-static char lexer_peek(lexer_t *l);
-static char lexer_advance(lexer_t *l);
-static token_t token_next(lexer_t *l);
-static void parse_error_at(parser_t *p, token_t tok, const char *msg);
+const char *token_kind_name(token_kind_t as);
+void print_token(token_t tk);
+char lexer_peek(lexer_t *l);
+char lexer_advance(lexer_t *l);
+token_t token_next(lexer_t *l);
+void parse_error_at(parser_t *p, token_t tok, const char *msg);
 
-static node_t *make_node(node_kind_t type);
-static void parser_advance(parser_t *p);
-static bool parse_expect(parser_t *p, token_kind_t kind);
+node_t *make_node(node_kind_t type);
+void parser_advance(parser_t *p);
+bool parse_expect(parser_t *p, token_kind_t kind);
 
 node_t *parse_expr(parser_t *p);
 node_t *parse_atom(parser_t *p);
@@ -102,10 +139,12 @@ node_t *parse_binary_operation(parser_t *p);
 node_t *parse_and(parser_t *p);
 
 void node_print_opt(node_t *node, node_opt_t opt);
+#define node_print(node, ...) node_print_opt((node), (node_opt_t) { __VA_ARGS__ } )
 
-static const char *token_kind_name(token_kind_t as)
+#if defined(QUERY_IMPLEMENTATION)
+const char *token_kind_name(token_kind_t as)
 {
-    static_assert(TCOUNT == 12 && "The token count Error");
+    static_assert(TCOUNT == 13 && "The token count Error");
     switch(as) {
         case TLPARENT:    return "LPARENT";
         case TRPARENT:    return "RPARENT";
@@ -119,11 +158,12 @@ static const char *token_kind_name(token_kind_t as)
         case TEOF:        return "EOF";
         case TGREAT:      return "GREATER";
         case TLESS:       return "LESSER";
+        case TUNKNOWN:       return "UNKNOWN";
         case TCOUNT: default: return NULL;
     }
 }
 
-static void print_token(token_t tk)
+void print_token(token_t tk)
 {
     if (tk.name.count > 0) {
         printf("%-8s \""SV_Fmt"\"\n", token_kind_name(tk.as), SV_Arg(tk.name));
@@ -132,23 +172,23 @@ static void print_token(token_t tk)
     }
 }
 
-static char lexer_peek(lexer_t *l)
+char lexer_peek(lexer_t *l)
 {
     return (l->position < l->source.count) ? l->source.data[l->position] : '\0';
 }
 
 
-static char lexer_peek_n(lexer_t *l, size_t n)
+char lexer_peek_n(lexer_t *l, size_t n)
 {
     return (l->position + n < l->source.count) ? l->source.data[l->position + n] : '\0';
 }
 
-static char lexer_advance(lexer_t *l)
+char lexer_advance(lexer_t *l)
 {
     return l->source.data[l->position++];
 }
 
-static void lexer_skip_whitespace(lexer_t *l)
+void lexer_skip_whitespace(lexer_t *l)
 {
     while(l->position < l->source.count &&
           isspace((unsigned char)lexer_peek(l))) {
@@ -156,7 +196,7 @@ static void lexer_skip_whitespace(lexer_t *l)
     }
 }
 
-static token_t token_next(lexer_t *l)
+token_t token_next(lexer_t *l)
 {
     lexer_skip_whitespace(l);
 
@@ -190,10 +230,10 @@ static token_t token_next(lexer_t *l)
     nob_log(ERROR, "Unexpected char '%c'", c);
     size_t pos = l->position;
     lexer_advance(l);
-    return (token_t) { .as = TEOF , .pos = pos };
+    return (token_t) { .as = TUNKNOWN , .pos = pos };
 }
 
-static node_t *make_node(node_kind_t kind)
+node_t *make_node(node_kind_t kind)
 {
     node_t *node = calloc(1, sizeof(*node));
     if (!node) return NULL;
@@ -201,12 +241,12 @@ static node_t *make_node(node_kind_t kind)
     return node;
 }
 
-static void parser_advance(parser_t *p)
+void parser_advance(parser_t *p)
 {
     p->cur = token_next(p->lex);
 }
 
-static void parse_error_at(parser_t *p, token_t tok, const char *msg)
+void parse_error_at(parser_t *p, token_t tok, const char *msg)
 {
     String_View src = p->lex->source;
     nob_log(NOB_ERROR, "%s", msg);
@@ -217,7 +257,7 @@ static void parse_error_at(parser_t *p, token_t tok, const char *msg)
 // TODO: @Mr-Emacs:
 // 01:52:25: Make error message not use token name but rather more description
 
-static bool parse_expect(parser_t *p, token_kind_t kind)
+bool parse_expect(parser_t *p, token_kind_t kind)
 {
     if (p->cur.as != kind) {
         const char *msg = nob_temp_sprintf("Expected %s but got %s\n",
@@ -268,7 +308,7 @@ node_t *parse_atom(parser_t *p)
 {
 
     node_t *node = NULL;
-    node_kind_t kind;
+    node_kind_t kind = NODE_TAG;
     if(p->cur.as == TIDENT) {
         node = make_node(NODE_TAG);
         node->tag = p->cur.name;
@@ -282,6 +322,7 @@ node_t *parse_atom(parser_t *p)
         node = parse_expr(p);
         if (!parse_expect(p, TRPARENT)) return NULL;
         parser_advance(p);
+        return node;
     } else {
         const char *msg = nob_temp_sprintf("Unexpected %s in the atom branch\n",
                           token_kind_name(p->cur.as));
@@ -309,6 +350,10 @@ node_t *parse_atom(parser_t *p)
             node = node2;
         }
         else if (kind == NODE_STATUS) {
+            if (op != TEQUAL) {
+                parse_error_at(p, p->cur, "Status only supports equal operator");
+                return NULL;
+            }
             node_kind_t kind =   (op == TGREAT) ? NODE_GREATER
                                : (op == TLESS)  ? NODE_LESSER
                                : NODE_STATUS;
@@ -348,7 +393,7 @@ node_t *parse_expr(parser_t *p)
     return lhs;
 }
 
-static void node_print_binop_labeled(node_t *node, node_opt_t opt, FILE *f, const char *label)
+void node_print_binop_labeled(node_t *node, node_opt_t opt, FILE *f, const char *label)
 {
     fprintf(f, "%*s%s(\n", opt.pp, "", label);
     opt.pp += 4;
@@ -358,7 +403,7 @@ static void node_print_binop_labeled(node_t *node, node_opt_t opt, FILE *f, cons
     fprintf(f, "%*s)\n", opt.pp, "");
 }
 
-static void node_print_unop_labeled(node_t *node, node_opt_t opt, FILE *f, const char *label)
+void node_print_unop_labeled(node_t *node, node_opt_t opt, FILE *f, const char *label)
 {
     fprintf(f, "%*s%s(\n", opt.pp, "", label);
     opt.pp += 4;
@@ -411,19 +456,6 @@ void node_print_opt(node_t *node, node_opt_t opt)
     }
 }
 
-#define node_print(node, ...) node_print_opt((node), (node_opt_t) { __VA_ARGS__ } )
+#endif //QUERY_IMPLEMENTATION
 
-int main(void)
-{
-    lexer_t lexer = {
-        .source   = sv_from_cstr("!(p<30 * (!s=0) | p>20)"),
-        .position = 0,
-    };
-
-    parser_t parser = { .lex = &lexer };
-    parser_advance(&parser);
-    node_t *tree = parse_expr(&parser);
-
-    node_print(tree);
-    return 0;
-}
+#endif //QUERY_H
