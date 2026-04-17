@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 #define NOB_NO_ECHO
 #define NOB_IMPLEMENTATION
 #include "nob.h"
@@ -242,7 +243,7 @@ static int create_task_dir(task_t *task)
     char *buf = temp_sprintf("%s_%s_%02d%02d%02d", task->task_name, buffer,
                              now->tm_hour, now->tm_min, now->tm_sec);
 
-    char full_path[PATH_MAX];
+    char full_path[PATH_MAX * 2];
     snprintf(full_path, sizeof(full_path), "%s/%s", task->root_path, buf);
 
     if (!nob_mkdir_if_not_exists(full_path)) return -1;
@@ -374,8 +375,8 @@ void usage(const char *program)
     printf("Usage: %s <command> [flags]\n\n", program);
     printf("Commands:\n");
     printf("  add    -name <name> -priority <level> -notes <notes>\n");
-    printf("  list   -<query>\n");
-    printf("  close  -id <huid>\n");
+    printf("  list   -src <query>\n");
+    printf("  close  -id  <huid>\n");
 }
 
 static int cmd_add(int argc, char **argv, task_t *task)

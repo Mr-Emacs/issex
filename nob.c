@@ -20,9 +20,9 @@ void common_cmd(Cmd *cmd)
     cmd_append(cmd, CMD);
     cmd_append(cmd, "-Wno-deprecated-declarations");
     cmd_append(cmd, "-Wall", "-Wextra");
-    // cmd_append(cmd, "-g");
+    cmd_append(cmd, "-g");
     cmd_append(cmd, "-std=c23");
-    // cmd_append(cmd, "-DEMACS_PRINT");
+    cmd_append(cmd, "-DEMACS_PRINT");
     cmd_append(cmd, "-Wno-unused-function");
 }
 
