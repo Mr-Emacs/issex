@@ -1,5 +1,5 @@
 #define NOB_IMPLEMENTATION
-#include "nob.h"
+#include "./src/nob.h"
 
 #if defined(__clang__)
 #define CMD "clang"
@@ -21,6 +21,7 @@ void common_cmd(Cmd *cmd)
     cmd_append(cmd, "-Wno-deprecated-declarations");
     cmd_append(cmd, "-Wall", "-Wextra");
     cmd_append(cmd, "-g");
+    cmd_append(cmd, "-Isrc/");
     cmd_append(cmd, "-std=c23");
     cmd_append(cmd, "-DEMACS_PRINT");
     cmd_append(cmd, "-Wno-unused-function");
@@ -32,7 +33,7 @@ int main(int argc, char **argv)
     static Cmd   cmd   = {0};
 
     common_cmd(&cmd);
-    cmd_append(&cmd, "-o", out, "main.c");
+    cmd_append(&cmd, "-o", out, "src/main.c");
     if (!nob_cmd_run(&cmd)) return 1;
 
     return 0;

@@ -374,9 +374,33 @@ void usage(const char *program)
 {
     printf("Usage: %s <command> [flags]\n\n", program);
     printf("Commands:\n");
-    printf("  add    -name <name> -priority <level> -notes <notes>\n");
-    printf("  list   -src <query>\n");
-    printf("  close  -id  <huid>\n");
+    printf("  add    -name <name> [-priority <level>] [-notes <text>]\n");
+    printf("  list   [-src <query>]\n");
+    printf("  close  -id <huid>\n\n");
+    printf("Query syntax (for -src):\n");
+    printf("  p=<n>          priority equals n\n");
+    printf("  p><n>          priority greater than n\n");
+    printf("  p<<n>          priority less than n\n");
+    printf("  s=1            status OPEN\n");
+    printf("  s=0            status CLOSED\n");
+    printf("  <expr> & <expr>  AND\n");
+    printf("  <expr> | <expr>  OR\n");
+    printf("  !<expr>          NOT\n\n");
+    printf("Examples:\n");
+    printf("  %s add -name \"Fix bug\" -priority 2 -notes \"Segfault in parser\"\n", program);
+    printf("  %s list\n", program);
+    printf("  %s list -src \"p>1 & s=1\"\n", program);
+    printf("  %s close -id <huid>\n", program);
+}
+
+static void warn_unconsumed_args(int argc, char **argv, int skip, const char *hint)
+{
+    if (!_arg_used) return;
+    for (int i = skip; i < argc; i++) {
+        if (!_arg_used[i]) {
+            nob_log(NOB_WARNING, "unexpected argument '%s' -- did you forget a flag? (e.g. %s)", argv[i], hint);
+        }
+    }
 }
 
 static int cmd_add(int argc, char **argv, task_t *task)
@@ -384,8 +408,10 @@ static int cmd_add(int argc, char **argv, task_t *task)
     char *name   = create_flag(argc, argv, char*, "name", "Name of the issue");
     int priority = create_flag(argc, argv, int, "priority", "Priority of the issue");
     char *notes  = create_flag(argc, argv, char*, "notes", "Notes for the current issue");
+    warn_unconsumed_args(argc, argv, 2, "-name, -priority, -notes");
     if (!name) {
-        nob_log(ERROR, "add: missing name\n");
+        nob_log(NOB_ERROR, "add: missing -name flag");
+        fprintf(stderr, "  usage: add -name <name> [-priority <level>] [-notes <text>]\n");
         return -1;
     }
 
@@ -399,6 +425,7 @@ static int cmd_add(int argc, char **argv, task_t *task)
 static int cmd_ls(int argc, char **argv, task_t *task)
 {
     char *src = create_flag(argc, argv, char*, "src", "Source Code for the query System");
+    warn_unconsumed_args(argc, argv, 2, "-src");
     node_t *query_tree = NULL;
 
     if (src && src[0] != '\0') {
@@ -472,8 +499,13 @@ static int cmd_ls(int argc, char **argv, task_t *task)
 
 static int cmd_close(int argc, char **argv, task_t *task)
 {
-    // FIXME: This is an error dunno why the first arg is close
     char *huid = create_flag(argc, argv, char*, "id", "HUID of the task Issue");
+    warn_unconsumed_args(argc, argv, 2, "-id");
+    if (!huid) {
+        nob_log(NOB_ERROR, "close: missing -id flag");
+        fprintf(stderr, "  usage: close -id <huid>\n");
+        return -1;
+    }
     return close_task(task, huid);
 }
 
@@ -487,7 +519,11 @@ int main(int argc, char **argv)
     if (strcmp(cmd, "add")   == 0)  { if (cmd_add(argc, argv, &t) < 0) return -1; }
     else if (strcmp(cmd, "list")  == 0)  { if (cmd_ls(argc, argv, &t) < 0) return -1; }
     else if (strcmp(cmd, "close") == 0) { if (cmd_close(argc, argv, &t) < 0) return -1; }
-    else { usage(argv[0]); return -1; }
+    else {
+        nob_log(NOB_ERROR, "unknown command '%s'", cmd);
+        usage(argv[0]);
+        return -1;
+    }
 
     return 0;
 }

@@ -1,0 +1,208 @@
+.TH ISSEX 1 "2026" "issex" "User Commands"
+.SH NAME
+issex \- a lightweight file-based issue tracker
+.SH SYNOPSIS
+.B issex
+.I command
+.RI [ flags ]
+.SH DESCRIPTION
+.B issex
+manages issues stored as Markdown files on disk.
+Each issue lives in its own directory under a
+.B notes/
+folder, which is located by walking up from the current working directory until one is found (similar to how
+.B git
+locates a repository root).
+Each issue directory contains a single
+.B notes.md
+file holding its metadata and free-form notes.
+.SH COMMANDS
+.TP
+.B add
+Create a new issue.
+.RS
+.TP
+.B \-name \fI<text>\fR
+.RB ( required )
+Short title for the issue.
+.TP
+.B \-priority \fI<n>\fR
+Integer priority level. Defaults to
+.BR 0 .
+.TP
+.B \-notes \fI<text>\fR
+Free-form notes to embed in the issue file.
+.RE
+.TP
+.B list
+List issues, optionally filtered by a query expression (see
+.BR QUERY\ SYNTAX
+below).
+.RS
+.TP
+.B \-src \fI<query>\fR
+Filter expression. Omit to list all issues.
+.RE
+.TP
+.B close
+Mark an issue as CLOSED.
+.RS
+.TP
+.B \-id \fI<huid>\fR
+.RB ( required )
+The HUID (human-readable unique ID) of the issue to close. HUIDs are printed by
+.BR list .
+.RE
+.SH QUERY SYNTAX
+Queries are small boolean expressions passed to
+.BR list\ \-src .
+Whitespace is ignored.
+.PP
+.SS Atoms
+.TP
+.BI p= n
+Priority equals
+.IR n .
+.TP
+.BI p> n
+Priority greater than
+.IR n .
+.TP
+.BI p< n
+Priority less than
+.IR n .
+.TP
+.B s=1
+Status is OPEN.
+.TP
+.B s=0
+Status is CLOSED.
+.TP
+.I huid_or_title
+Match a specific issue by its HUID or title.
+.SS Operators
+.TP
+.IB expr \ & \ expr
+Logical AND (higher precedence than
+.BR | ).
+.TP
+.IB expr \ | \ expr
+Logical OR.
+.TP
+.BI ! expr
+Logical NOT. Applies to the immediately following atom or parenthesised group.
+.TP
+.BI ( expr )
+Grouping.
+.SH EXAMPLES
+Add an issue with priority 3:
+.PP
+.RS
+.EX
+issex add \-name "Fix segfault in parser" \-priority 3 \-notes "Happens on empty input"
+.EE
+.RE
+.PP
+List all issues:
+.PP
+.RS
+.EX
+issex list
+.EE
+.RE
+.PP
+List all open issues with priority greater than 1:
+.PP
+.RS
+.EX
+issex list \-src "p>1 & s=1"
+.EE
+.RE
+.PP
+List issues that are closed OR have priority 0:
+.PP
+.RS
+.EX
+issex list \-src "s=0 | p=0"
+.EE
+.RE
+.PP
+List all open issues that are
+.I not
+priority 5:
+.PP
+.RS
+.EX
+issex list \-src "s=1 & !p=5"
+.EE
+.RE
+.PP
+Close an issue by its HUID:
+.PP
+.RS
+.EX
+issex close \-id task_20260417_143022
+.EE
+.RE
+.SH NOTES\ FILE\ FORMAT
+Each issue is stored as a Markdown file with the following structure:
+.PP
+.RS
+.EX
+# <title>
+
+\- ID: <huid>
+
+## PRIORITY: <n>
+
+## STATUS: OPEN|CLOSED
+
+## NOTES:
+
+<free\-form text>
+.EE
+.RE
+.PP
+The
+.B HUID
+is derived from the issue name and the creation timestamp
+.RI ( name_YYYYMMDD_HHMMSS ).
+.SH ENVIRONMENT
+No environment variables are used.
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 1
+Missing required argument or invalid usage.
+.TP
+.B \-1
+A command-level error occurred (e.g., issue not found, filesystem error, parse error).
+.SH BUILDING
+.B issex
+ships with a self-rebuilding build script based on
+.BR nob.h .
+Compile the bootstrap once and it will keep itself up to date:
+.PP
+.RS
+.EX
+cc \-o nob nob.c && ./nob
+.EE
+.RE
+.PP
+This produces the
+.B issex
+binary (or
+.B issex.exe
+on Windows).
+To enable Emacs-friendly output (file:line references), pass
+.B \-DEMACS_PRINT
+at compile time (already the default in
+.BR nob.c ).
+.SH SEE ALSO
+.BR git (1),
+.BR grep (1)
+.SH BUGS
+Report bugs by opening an issue with
+.BR "issex add" .
