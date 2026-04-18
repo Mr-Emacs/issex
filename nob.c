@@ -9,6 +9,7 @@
 #error "Unsupported Compiler install GCC or CLANG"
 #endif
 
+// NOTE:This_is_le_penger_20260417_205514 used for referenceing in emacs
 #ifdef _WIN32
     const char *out   = "issex.exe";
 #else

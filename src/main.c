@@ -89,6 +89,15 @@ static task_meta_t *task_parse(const char *path);
 static bool evaluate_query(node_t *node, task_meta_t *task);
 static void free_task_metadata(task_meta_t *task);
 
+static void strip_whitespace(char *str);
+
+static void strip_whitespace(char *str)
+{
+    for (; *str; ++str) {
+        if (*str == ' ') *str = '_';
+    }
+}
+
 static int find_note_line_num(const char *file_path)
 {
     String_Builder sb = {0};
@@ -414,6 +423,8 @@ static int cmd_add(int argc, char **argv, task_t *task)
         fprintf(stderr, "  usage: add -name <name> [-priority <level>] [-notes <text>]\n");
         return -1;
     }
+
+    strip_whitespace(name);
 
     task->task_name = name;
     task->header.notes = notes;
