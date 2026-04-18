@@ -183,6 +183,7 @@ static void flag_consume(int argc, int index)
     if (index > 0 && index < argc) _arg_used[index] = true;
 }
 
+#ifndef _MSC_VER
 #define create_flag(argc, argv, type, name, description) \
     _Generic((type){0}, \
         int: ({ \
@@ -204,5 +205,34 @@ static void flag_consume(int argc, int index)
             _parse_char_ptr(argc, argv, name); \
         }) \
     )
-
-#endif //FLAG_H
+#else
+// MSVC-compatible version: three typed inline helpers + a type-dispatching macro
+static int _create_flag_int(int argc, char **argv, const char *name, const char *desc)
+{
+    _track_args(argc);
+    int idx = _register_flag(name, desc, FLAG_INT);
+    _flag_main[idx].used = true;
+    return _parse_int(argc, argv, name);
+}
+static bool _create_flag_bool(int argc, char **argv, const char *name, const char *desc)
+{
+    _track_args(argc);
+    int idx = _register_flag(name, desc, FLAG_BOOL);
+    _flag_main[idx].used = true;
+    return _parse_bool(argc, argv, name);
+}
+static char *_create_flag_cstr(int argc, char **argv, const char *name, const char *desc)
+{
+    _track_args(argc);
+    int idx = _register_flag(name, desc, FLAG_CHAR_PTR);
+    _flag_main[idx].used = true;
+    return _parse_char_ptr(argc, argv, name);
+}
+#define create_flag(argc, argv, type, name, description) \
+    _Generic((type){0}, \
+        int:   _create_flag_int (argc, argv, name, description), \
+        bool:  _create_flag_bool(argc, argv, name, description), \
+        char*: _create_flag_cstr(argc, argv, name, description)  \
+    )
+#endif
+#endif

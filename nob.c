@@ -5,8 +5,10 @@
 #define CMD "clang"
 #elif defined(__GNUC__)
 #define CMD "cc"
+#elif defined( _MSC_VER )
+#define CMD "cl"
 #else
-#error "Unsupported Compiler install GCC or CLANG"
+#error "Not a supported compiler"
 #endif
 
 // NOTE:This_is_le_penger_20260417_205514 used for referenceing in emacs
@@ -16,6 +18,7 @@
     const char *out   = "issex";
 #endif
 
+#ifndef _MSC_VER
 void common_cmd(Cmd *cmd)
 {
     cmd_append(cmd, CMD);
@@ -26,7 +29,20 @@ void common_cmd(Cmd *cmd)
     cmd_append(cmd, "-std=c23");
     cmd_append(cmd, "-DEMACS_PRINT");
     cmd_append(cmd, "-Wno-unused-function");
+    cmd_append(cmd, "-o", out, "src/main.c");
 }
+#else
+void common_cmd(Cmd *cmd)
+{
+    cmd_append(cmd, CMD);
+    cmd_append(cmd, "/Zi");
+    cmd_append(cmd, "/Isrc");
+    cmd_append(cmd, "/std:clatest");
+    cmd_append(cmd, "/TC");
+    cmd_append(cmd, "/DEMACS_PRINT");
+    cmd_append(cmd, temp_sprintf("/Fe%s", out), "src/main.c");
+}
+#endif
 
 int main(int argc, char **argv)
 {
@@ -34,7 +50,6 @@ int main(int argc, char **argv)
     static Cmd   cmd   = {0};
 
     common_cmd(&cmd);
-    cmd_append(&cmd, "-o", out, "src/main.c");
     if (!nob_cmd_run(&cmd)) return 1;
 
     return 0;
