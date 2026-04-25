@@ -144,7 +144,9 @@ void node_print_opt(node_t *node, node_opt_t opt);
 #if defined(QUERY_IMPLEMENTATION)
 const char *token_kind_name(token_kind_t as)
 {
+    #ifndef _MSC_VER
     static_assert(TCOUNT == 13 && "The token count Error");
+    #endif
     switch(as) {
         case TLPARENT:    return "LPARENT";
         case TRPARENT:    return "RPARENT";
@@ -415,7 +417,9 @@ void node_print_unop_labeled(node_t *node, node_opt_t opt, FILE *f, const char *
 
 void node_print_opt(node_t *node, node_opt_t opt)
 {
+    #ifndef _MSC_VER
     static_assert(NODE_COUNT == 8 && "There is an error in the node count");
+    #endif
     if (!node) return;
 
     FILE *f = opt.f ? opt.f : stdout;

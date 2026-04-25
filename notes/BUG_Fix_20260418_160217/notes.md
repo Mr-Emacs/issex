@@ -1,0 +1,13 @@
+# BUG_Fix
+
+- ID: BUG_Fix_20260418_160217
+
+## PRIORITY: 2
+
+## STATUS: OPEN
+
+## TAG: .crash
+
+## NOTES: 
+
+ABOBA
