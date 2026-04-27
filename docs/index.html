@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>ISSEX(1)</title>
+<style>
+body {
+  font-family: sans-serif;
+  max-width: 900px;
+  margin: 40px auto;
+  padding: 0 20px;
+  line-height: 1.6;
+  color: #222;
+}
+h2 {
+  border-bottom: 1px solid #ccc;
+  margin-top: 36px;
+  font-size: 1.2em;
+  text-transform: uppercase;
+}
+h3 {
+  margin-top: 20px;
+  font-size: 1em;
+  text-transform: uppercase;
+}
+pre {
+  background: #f6f6f6;
+  border: 1px solid #ddd;
+  padding: 12px;
+  overflow-x: auto;
+}
+dl { margin: 0; }
+dt { font-family: monospace; font-weight: bold; margin-top: 12px; }
+dd { margin-left: 2em; }
+div.rs {
+  margin-left: 2em;
+  border-left: 2px solid #e0e0e0;
+  padding-left: 12px;
+}
+p { margin: .5em 0; }
+</style>
+</head>
+<body>
+<h1>ISSEX(1)</h1>
+<h2>NAME</h2>
+<p>issex - a lightweight file-based issue tracker</p>
+<h2>SYNOPSIS</h2>
+<p><b>issex</b> <i>command</i> [ <i>flags</i> ]</p>
+<h2>DESCRIPTION</h2>
+<p><b>issex</b> manages issues stored as Markdown files on disk. Each issue lives in its own directory under a <b>notes/</b> folder, which is located by walking up from the current working directory until one is found (similar to how <b>git</b> locates a repository root). Each issue directory contains a single <b>notes.md</b> file holding its metadata and free-form notes.</p>
+<h2>COMMANDS</h2>
+<dl>
+<dt><b>add</b></dt><dd>Create a new issue.</dd>
+</dl>
+<div class="rs">
+<dl>
+<dt><b>-name</b> <b><i>\1</i></b></dt><dd>( <b>required</b> ) Short title for the issue.</dd>
+<dt><b>-priority</b> <b><i>\1</i></b></dt><dd>Integer priority level. Defaults to <b>R</b> <b>0</b> <b>.</b></dd>
+<dt><b>-notes</b> <b><i>\1</i></b></dt><dd>Free-form notes to embed in the issue file.</dd>
+</dl>
+</div>
+<dl>
+<dt><b>list</b></dt><dd>List issues, optionally filtered by a query expression (see <b>R</b> <b>QUERY\</b> <b>SYNTAX</b> below).</dd>
+</dl>
+<div class="rs">
+<dl>
+<dt><b>-src</b> <b><i>\1</i></b></dt><dd>Filter expression. Omit to list all issues.</dd>
+</dl>
+</div>
+<dl>
+<dt><b>close</b></dt><dd>Mark an issue as CLOSED.</dd>
+</dl>
+<div class="rs">
+<dl>
+<dt><b>-id</b> <b><i>\1</i></b></dt><dd>( <b>required</b> ) The HUID (human-readable unique ID) of the issue to close. HUIDs are printed by <b>R</b> <b>list</b> <b>.</b></dd>
+</dl>
+</div>
+<h2>QUERY SYNTAX</h2>
+<p>Queries are small boolean expressions passed to <b>R</b> <b>list\</b> <b>-src</b> <b>.</b> Whitespace is ignored.</p>
+<h3>Atoms</h3>
+<dl>
+<dt><b>I</b> <b>p=</b> <b>n</b></dt><dd>Priority equals <i>R</i> <i>n</i> <i>.</i></dd>
+<dt><b>I</b> <b>p&gt;</b> <b>n</b></dt><dd>Priority greater than <i>R</i> <i>n</i> <i>.</i></dd>
+<dt><b>I</b> <b>p&lt;</b> <b>n</b></dt><dd>Priority less than <i>R</i> <i>n</i> <i>.</i></dd>
+<dt><b>s=1</b></dt><dd>Status is OPEN.</dd>
+<dt><b>s=0</b></dt><dd>Status is CLOSED.</dd>
+<dt><i>huid_or_title</i></dt><dd>Match a specific issue by its HUID or title.</dd>
+</dl>
+<h3>Operators</h3>
+<dl>
+<dt><i>B</i> <i>expr</i> <i>\</i> <i>&amp;</i> <i>\</i> <i>expr</i></dt><dd>Logical AND (higher precedence than <b>R</b> <b>|</b> <b>).</b></dd>
+<dt><i>B</i> <i>expr</i> <i>\</i> <i>|</i> <i>\</i> <i>expr</i></dt><dd>Logical OR.</dd>
+<dt><b>I</b> <b>!</b> <b>expr</b></dt><dd>Logical NOT. Applies to the immediately following atom or parenthesised group.</dd>
+<dt><b>I</b> <b>(</b> <b>expr</b> <b>)</b></dt><dd>Grouping.</dd>
+</dl>
+<h2>EXAMPLES</h2>
+<p>Add an issue with priority 3:</p>
+<div class="rs">
+<pre><code>
+issex add -name "Fix segfault in parser" -priority 3 -notes "Happens on empty input"
+</code></pre>
+</div>
+<p>List all issues:</p>
+<div class="rs">
+<pre><code>
+issex list
+</code></pre>
+</div>
+<p>List all open issues with priority greater than 1:</p>
+<div class="rs">
+<pre><code>
+issex list -src "p&gt;1 &amp; s=1"
+</code></pre>
+</div>
+<p>List issues that are closed OR have priority 0:</p>
+<div class="rs">
+<pre><code>
+issex list -src "s=0 | p=0"
+</code></pre>
+</div>
+<p>List all open issues that are <i>not</i> priority 5:</p>
+<div class="rs">
+<pre><code>
+issex list -src "s=1 &amp; !p=5"
+</code></pre>
+</div>
+<p>Close an issue by its HUID:</p>
+<div class="rs">
+<pre><code>
+issex close -id task_20260417_143022
+</code></pre>
+</div>
+<h2>NOTES\ FILE\ FORMAT</h2>
+<p>Each issue is stored as a Markdown file with the following structure:</p>
+<div class="rs">
+<pre><code>
+# &lt;title&gt;
+
+- ID: &lt;huid&gt;
+
+## PRIORITY: &lt;n&gt;
+
+## STATUS: OPEN|CLOSED
+
+## NOTES:
+
+&lt;free-form text&gt;
+</code></pre>
+</div>
+<p>The <b>HUID</b> is derived from the issue name and the creation timestamp ( <i>name_YYYYMMDD_HHMMSS</i> ).</p>
+<h2>ENVIRONMENT</h2>
+<p>No environment variables are used.</p>
+<h2>EXIT STATUS</h2>
+<dl>
+<dt><b>0</b></dt><dd>Success.</dd>
+<dt><b>1</b></dt><dd>Missing required argument or invalid usage.</dd>
+<dt><b>-1</b></dt><dd>A command-level error occurred (e.g., issue not found, filesystem error, parse error).</dd>
+</dl>
+<h2>BUILDING</h2>
+<p><b>issex</b> ships with a self-rebuilding build script based on <b>R</b> <b>nob.h</b> <b>.</b> Compile the bootstrap once and it will keep itself up to date:</p>
+<div class="rs">
+<pre><code>
+cc -o nob nob.c &amp;&amp; ./nob
+</code></pre>
+</div>
+<p>This produces the <b>issex</b> binary (or <b>issex.exe</b> on Windows). To enable Emacs-friendly output (file:line references), pass <b>-DEMACS_PRINT</b> at compile time (already the default in <b>R</b> <b>nob.c</b> <b>).</b></p>
+<h2>SEE ALSO</h2>
+<p><b>R</b> <b>git</b> <b>(1),</b> <b>R</b> <b>grep</b> <b>(1)</b></p>
+<h2>BUGS</h2>
+<p>Report bugs by opening an issue with <b>R</b> <b>issex add</b> <b>.</b></p>
+</body></html>
