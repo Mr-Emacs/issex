@@ -17,18 +17,25 @@
 */
 
 /* Usage:
-*int main(int argc, char **argv)
-* {
-*    lexer_t lexer = {
-*         .source   = sv_from_cstr("(!p=40) & s=1"),
-*         .position = 0,
-*     };
-**    parser_t parser = { .lex = &lexer };
-*     parser_advance(&parser);
-*     node_t *tree = parse_expr(&parser);
+
+#define QUERY_IMPLEMENTATION
+*#include "query.h"
+*
+*int main(void)
+*{
+*   lexer_t lexer = {
+*        .source   = sv_from_cstr("(!p=40) & t=editor | t=borg"),
+*        .position = 0,
+*    };
+*
+*    printf(SV_Fmt"\n", SV_Arg(lexer.source));
+*
+*    parser_t parser = { .lex = &lexer };
+*    parser_advance(&parser);
+*    node_t *tree = parse_expr(&parser);
 *    node_print(tree);
-* }
-* return 0;
+*   return 0;
+*}
 */
 
 #ifndef NOB_IMPLEMENTATION
@@ -64,12 +71,19 @@ typedef struct {
 } token_t;
 
 typedef struct {
+    String_View *items;
+    size_t count;
+    size_t capacity;
+} String_Views;
+
+typedef struct {
     String_View source;
     size_t position;
 } lexer_t;
 
 typedef enum {
     NODE_TAG,
+    NODE_SUB_TAG,
     NODE_PRIORITY,
     NODE_STATUS,
     NODE_AND,
@@ -104,6 +118,7 @@ struct node_t {
     node_kind_t as;
     union {
         binop_t binary;
+        String_Views sub_tag;
         String_View  tag;
         priority_node_t prio;
         status_node_t stat;
@@ -146,6 +161,8 @@ const char *token_kind_name(token_kind_t as)
 {
     #ifndef _MSC_VER
     static_assert(TCOUNT == 13 && "The token count Error");
+    #else
+    _Static_assert(TCOUNT == 13, "The token count Error");
     #endif
     switch(as) {
         case TLPARENT:    return "LPARENT";
@@ -316,6 +333,7 @@ node_t *parse_atom(parser_t *p)
         node->tag = p->cur.name;
         if (sv_eq(node->tag, sv_from_cstr("p"))) kind = NODE_PRIORITY;
         else if (sv_eq(node->tag, sv_from_cstr("s"))) kind = NODE_STATUS;
+        else if (sv_eq(node->tag, sv_from_cstr("t"))) kind = NODE_SUB_TAG;
         else kind = NODE_TAG;
         parser_advance(p);
     }
@@ -334,7 +352,25 @@ node_t *parse_atom(parser_t *p)
     if (p->cur.as == TEQUAL || p->cur.as == TGREAT || p->cur.as == TLESS) {
         token_kind_t op = p->cur.as;
         parser_advance(p);
-        if (!parse_expect(p, TNUMBER)) return NULL;
+        if (p->cur.as != TIDENT) {
+            if (!parse_expect(p, TNUMBER)) return NULL;
+        }
+
+        if (kind == NODE_SUB_TAG) {
+            node_t *node2 = make_node(NODE_SUB_TAG);
+            da_append(&node2->sub_tag, p->cur.name);
+            parser_advance(p);
+
+            while (p->cur.as == TDOT || p->cur.as == TIDENT) {
+                if (p->cur.as == TDOT) parser_advance(p);
+                if (p->cur.as == TIDENT) {
+                    da_append(&node2->sub_tag, p->cur.name);
+                    parser_advance(p);
+                } else break;
+            }
+
+            node = node2;
+        }
 
         if (kind == NODE_PRIORITY) {
             node_kind_t kind =   (op == TGREAT) ? NODE_GREATER
@@ -418,7 +454,9 @@ void node_print_unop_labeled(node_t *node, node_opt_t opt, FILE *f, const char *
 void node_print_opt(node_t *node, node_opt_t opt)
 {
     #ifndef _MSC_VER
-    static_assert(NODE_COUNT == 8 && "There is an error in the node count");
+    static_assert(NODE_COUNT == 9 && "There is an error in the node count");
+    #else
+    _Static_assert(NODE_COUNT == 9, "There is an error in the node count");
     #endif
     if (!node) return;
 
@@ -456,6 +494,11 @@ void node_print_opt(node_t *node, node_opt_t opt)
         } break;
         case NODE_COUNT: default: {
             nob_log(NOB_ERROR, "Unexpected node type %d", node->as);
+        } break;
+        case NODE_SUB_TAG: {
+            for (size_t i = 0; i < node->sub_tag.count; i++) {
+                fprintf(f, "%*sSUB_TAG: "SV_Fmt"\n", opt.pp, "", SV_Arg(node->sub_tag.items[i]));
+            }
         } break;
     }
 }

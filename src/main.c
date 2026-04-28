@@ -30,7 +30,6 @@
 typedef struct header_t header_t;
 typedef struct task_t task_t;
 typedef struct task_meta_t task_meta_t;
-typedef struct String_Views String_Views;
 
 #if defined(_WIN32)
 static char *strndup_win(const char *s, size_t n)
@@ -55,12 +54,6 @@ struct header_t {
     char *huid;
 };
 
-struct String_Views {
-    String_View *items;
-    size_t count;
-    size_t capacity;
-};
-
 struct task_t {
     char *path;
     char root_path[PATH_MAX + sizeof("/" notes_dir)];
@@ -69,6 +62,7 @@ struct task_t {
     char *current_path;
     header_t header;
     String_Views list;
+    String_Views tags;
 };
 
 struct task_meta_t {
@@ -79,6 +73,7 @@ struct task_meta_t {
     bool status;
     size_t priority;
     time_t time;
+    String_Views tags;
 };
 
 static int find_root(task_t *task);
@@ -157,6 +152,17 @@ static task_meta_t *task_parse(const char *path)
                 }
             }
         }
+        else if (sv_starts_with(line, sv_from_cstr("## TAGS"))) {
+            String_View temp = line;
+            sv_chop_by_delim(&temp, ':');
+            String_View tag_list = sv_trim(temp);
+            while (tag_list.count > 0) {
+                String_View tag = sv_trim(sv_chop_by_delim(&tag_list, ','));
+                if (tag.count > 0) {
+                    da_append(&meta->tags, tag);
+                }
+            }
+        }
         else if (sv_starts_with(line, sv_from_cstr("## STATUS: "))) {
             sv_chop_left(&line, 11);
             line = sv_trim(line);
@@ -171,10 +177,18 @@ static task_meta_t *task_parse(const char *path)
 static bool evaluate_query(node_t *query, task_meta_t *task)
 {
     if (!query) return false;
-    switch(query->as) {
+   switch(query->as) {
         case NODE_TAG: {
             return sv_eq(query->tag, sv_from_cstr(task->huid)) ||
                    (task->title && sv_eq(query->tag, sv_from_cstr(task->title)));
+        }
+        case NODE_SUB_TAG: {
+            for (size_t qi = 0; qi < query->sub_tag.count; qi++) {
+                for (size_t ti = 0; ti < task->tags.count; ti++) {
+                    if (sv_eq(query->sub_tag.items[qi], task->tags.items[ti])) return true;
+                }
+            }
+            return false;
         }
         case NODE_PRIORITY: {
             return task->priority == query->prio.value;
@@ -209,6 +223,7 @@ static void free_task_metadata(task_meta_t *task)
         free(task->huid);
         free(task->path);
         free(task->title);
+        free(task->tags.items);
         free(task);
     }
 }
@@ -277,6 +292,12 @@ static int create_task_md(task_t *task)
     sb_appendf(&sb, "- ID: %s\n\n", task->header.huid);
     sb_appendf(&sb, "## PRIORITY: %zu\n\n", task->header.priority);
     sb_append_cstr(&sb, "## STATUS: OPEN\n\n");
+    sb_append_cstr(&sb, "## TAGS: ");
+    for (size_t i = 0; i < task->tags.count; i++) {
+        if (i > 0) sb_append_cstr(&sb, ", ");
+        sb_appendf(&sb, SV_Fmt, SV_Arg(task->tags.items[i]));
+    }
+    sb_append_cstr(&sb, "\n\n");
     task->header.status = true;
     sb_appendf(&sb, "## NOTES: \n\n%s\n", task->header.notes);
 
@@ -392,6 +413,7 @@ void usage(const char *program)
     printf("  p<<n>          priority less than n\n");
     printf("  s=1            status OPEN\n");
     printf("  s=0            status CLOSED\n");
+    printf("  t=<tag>        task has tag\n");
     printf("  <expr> & <expr>  AND\n");
     printf("  <expr> | <expr>  OR\n");
     printf("  !<expr>          NOT\n\n");
@@ -417,10 +439,11 @@ static int cmd_add(int argc, char **argv, task_t *task)
     char *name   = create_flag(argc, argv, char*, "name", "Name of the issue");
     int priority = create_flag(argc, argv, int, "priority", "Priority of the issue");
     char *notes  = create_flag(argc, argv, char*, "notes", "Notes for the current issue");
-    warn_unconsumed_args(argc, argv, 2, "-name, -priority, -notes");
+    char *tags   = create_flag(argc, argv, char*, "tags", "Comma-separated tags for the issue");
+    warn_unconsumed_args(argc, argv, 2, "-name, -priority, -notes, -tags");
     if (!name) {
         nob_log(NOB_ERROR, "add: missing -name flag");
-        fprintf(stderr, "  usage: add -name <name> [-priority <level>] [-notes <text>]\n");
+        fprintf(stderr, "  usage: add -name <n> [-priority <level>] [-notes <text>] [-tags <t1,t2>]\n");
         return -1;
     }
 
@@ -429,6 +452,14 @@ static int cmd_add(int argc, char **argv, task_t *task)
     task->task_name = name;
     task->header.notes = notes;
     task->header.priority = (size_t)priority;
+
+    if (tags) {
+        String_View tag_list = sv_from_cstr(tags);
+        while (tag_list.count > 0) {
+            String_View tag = sv_trim(sv_chop_by_delim(&tag_list, ','));
+            if (tag.count > 0) da_append(&task->tags, tag);
+        }
+    }
 
     return create_task_md(task);
 }
