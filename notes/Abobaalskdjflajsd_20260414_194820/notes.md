@@ -6,6 +6,6 @@
 
 ## STATUS: OPEN
 
-## NOTES: 
+## NOTES:
 
-add
+This is the fix Hello world.
