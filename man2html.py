@@ -10,33 +10,28 @@ def escape_html(text):
                 .replace(">", "&gt;"))
 
 def inline(text):
+    if not text:
+        return ""
     text = escape_html(text)
     text = text.replace("\\-", "-")
     text = text.replace("\\&", "")
-    text = re.sub(r"\\fB(.*?)\\f[PR]", r"<b>\\1</b>", text)
-    text = re.sub(r"\\fI(.*?)\\f[PR]", r"<i>\\1</i>", text)
+    text = text.replace("\\|", "")
+    text = text.replace("\\ ", " ")
+
+    text = re.sub(r"\\fB(.*?)\\f[PR]", r"<b>\1</b>", text)
+    text = re.sub(r"\\fI(.*?)\\f[PR]", r"<i>\1</i>", text)
     text = re.sub(r"\\f.", "", text)
     text = re.sub(r"\\\*\(?\w+\)?", "", text)
     return text.strip()
 
-def alternating(words, tags):
-    out = []
-    for i, w in enumerate(words):
-        w = inline(w)
-        t = tags[i % len(tags)]
-        if t and w:
-            out.append(f"<{t}>{w}</{t}>")
-        else:
-            out.append(w)
-    return " ".join(out)
-
 def parse_inline_macro(line):
-    m = re.match(r"\.(B|I|BR|RB|BI|IB|RI|IR)\s*(.*)", line)
+    m = re.match(r"\.(BR|RB|BI|IB|RI|IR|B|I)\s*(.*)", line)
     if not m:
         return None
     macro, rest = m.group(1), m.group(2)
-    words = re.findall(r'"[^"]*"|\S+', rest)
+    words = re.findall(r'"[^"]*"|(?:\\.|[^\s])+', rest)
     words = [w.strip('"') for w in words]
+
     tag_map = {
         "B":  ["b"],
         "I":  ["i"],
@@ -48,6 +43,17 @@ def parse_inline_macro(line):
         "IR": ["i", ""],
     }
     return alternating(words, tag_map[macro])
+
+def alternating(words, tags):
+    out = []
+    for i, w in enumerate(words):
+        w = inline(w)
+        t = tags[i % len(tags)]
+        if t and w:
+            out.append(f"<{t}>{w}</{t}>")
+        else:
+            out.append(w)
+    return " ".join(out)
 
 html = []
 in_code = False
@@ -83,9 +89,6 @@ def flush_para():
     para_buf = []
     in_tp_label = False
 
-def flush_para_smart():
-    flush_para()
-
 i = 0
 while i < len(inp):
     raw = inp[i]
@@ -93,7 +96,7 @@ while i < len(inp):
     line = raw.strip()
 
     if line == ".EX":
-        flush_para_smart()
+        flush_para()
         close_dl()
         html.append("<pre><code>")
         in_code = True
@@ -112,7 +115,7 @@ while i < len(inp):
         continue
 
     if line == "":
-        flush_para_smart()
+        flush_para()
         continue
 
     if line.startswith(".TH"):
@@ -122,35 +125,35 @@ while i < len(inp):
         continue
 
     if line.startswith(".SH"):
-        flush_para_smart()
+        flush_para()
         close_dl()
-        html.append(f"<h2>{inline(line[3:].strip().strip('\"'))}</h2>")
+        html.append(f"<h2>{inline(line[3:].strip().strip(chr(34)))}</h2>")
         continue
 
     if line.startswith(".SS"):
-        flush_para_smart()
+        flush_para()
         close_dl()
-        html.append(f"<h3>{inline(line[3:].strip().strip('\"'))}</h3>")
+        html.append(f"<h3>{inline(line[3:].strip().strip(chr(34)))}</h3>")
         continue
 
     if line in [".PP", ".LP", ".P"]:
-        flush_para_smart()
+        flush_para()
         continue
 
     if line == ".RS":
-        flush_para_smart()
+        flush_para()
         close_dl()
         html.append('<div class="rs">')
         continue
 
     if line == ".RE":
-        flush_para_smart()
+        flush_para()
         close_dl()
         html.append("</div>")
         continue
 
     if line == ".TP":
-        flush_para_smart()
+        flush_para()
         in_tp_label = True
         continue
 
@@ -178,7 +181,7 @@ while i < len(inp):
     else:
         para_buf.append(text)
 
-flush_para_smart()
+flush_para()
 close_dl()
 
 head = f"""<!DOCTYPE html>
@@ -187,40 +190,83 @@ head = f"""<!DOCTYPE html>
 <meta charset="utf-8">
 <title>{title}</title>
 <style>
+:root {{
+  color-scheme: dark;
+}}
+*, *::before, *::after {{
+  box-sizing: border-box;
+}}
 body {{
-  font-family: sans-serif;
+  font-family: 'Liberation Mono', 'Fira Mono', 'Courier New', monospace;
   max-width: 900px;
   margin: 40px auto;
-  padding: 0 20px;
-  line-height: 1.6;
-  color: #222;
+  padding: 0 24px;
+  line-height: 1.65;
+  background: #181818;
+  color: #abb2bf;
+  font-size: 15px;
+}}
+h1 {{
+  color: #e06c75;
+  font-size: 1.4em;
+  margin-bottom: 4px;
+  letter-spacing: .04em;
+  border-bottom: 2px solid #e06c75;
+  display: inline-block;
 }}
 h2 {{
-  border-bottom: 1px solid #ccc;
-  margin-top: 36px;
-  font-size: 1.2em;
-  text-transform: uppercase;
-}}
-h3 {{
-  margin-top: 20px;
+  color: #98c379;
+  border-bottom: 1px solid #2d2f34;
+  margin-top: 2em;
+  margin-bottom: .4em;
   font-size: 1em;
   text-transform: uppercase;
+  letter-spacing: .08em;
+}}
+h3 {{
+  color: #98c379;
+  margin-top: 1.2em;
+  margin-bottom: .3em;
+  font-size: .95em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}}
+b {{
+  color: #e06c75;
+  font-weight: bold;
+}}
+i {{
+  color: #abb2bf;
+  font-style: italic;
 }}
 pre {{
-  background: #f6f6f6;
-  border: 1px solid #ddd;
-  padding: 12px;
+  background: #212226;
+  border: 1px solid #2d2f34;
+  border-left: 3px solid #e06c75;
+  padding: 14px 16px;
   overflow-x: auto;
+  border-radius: 3px;
 }}
-dl {{ margin: 0; }}
-dt {{ font-family: monospace; font-weight: bold; margin-top: 12px; }}
-dd {{ margin-left: 2em; }}
+dt {{
+  color: #e06c75;
+  font-weight: bold;
+  margin-top: 10px;
+}}
+dd {{
+  margin-left: 2.2em;
+}}
 div.rs {{
-  margin-left: 2em;
-  border-left: 2px solid #e0e0e0;
-  padding-left: 12px;
+  margin-left: 1.8em;
+  border-left: 2px solid #2d2f34;
+  padding-left: 14px;
 }}
-p {{ margin: .5em 0; }}
+p {{
+  margin: .4em 0;
+}}
+::selection {{
+  background: #e06c75;
+  color: #1a1b1e;
+}}
 </style>
 </head>
 <body>
@@ -229,5 +275,6 @@ p {{ margin: .5em 0; }}
 
 final = head + "\n".join(html) + "\n</body></html>\n"
 
-open("docs/index.html", "w", encoding="utf-8").write(final)
-print("generated index.html")
+with open("docs/index.html", "w", encoding="utf-8") as f:
+    f.write(final)
+print("generated docs/index.html")
